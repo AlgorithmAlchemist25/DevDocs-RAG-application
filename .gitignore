@@ -40,3 +40,21 @@ Thumbs.db
 
 # test folder
 tests
+
+# Secrets
+.env
+.env.*
+!.env.example
+env.env
+.streamlit/secrets.toml
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local files
+.DS_Store
+Thumbs.db
