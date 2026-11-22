@@ -12,8 +12,6 @@ langchain-huggingface
 langchain-nvidia-ai-endpoints
 
 # Vector Store
-langchain-pinecone
-pinecone
 supabase
 
 # Document loading
