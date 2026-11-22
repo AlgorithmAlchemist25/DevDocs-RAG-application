@@ -42,7 +42,7 @@ from dotenv import load_dotenv
 from supabase import create_client
 from langchain_community.vectorstores import SupabaseVectorStore
 
-from config import embedding_model
+from .config import embedding_model
 
 load_dotenv()
 

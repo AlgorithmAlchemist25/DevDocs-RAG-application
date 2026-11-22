@@ -1,6 +1,6 @@
 # This file acts as the data access layer from the Supabase Database for the conversation metadata
 
-from vector_store import supabase
+from .vector_store import supabase
 
 def create_conversation(thread_id : str, title : str):
     response = (

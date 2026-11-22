@@ -3,8 +3,8 @@ from typing import TypedDict, Annotated
 from langchain_core.messages import BaseMessage, AIMessage
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.postgres import PostgresSaver
-from retrieval import retrieve
-from generation import generate
+from .retrieval import retrieve
+from .generation import generate
 import os
 
 class QueryState(TypedDict):

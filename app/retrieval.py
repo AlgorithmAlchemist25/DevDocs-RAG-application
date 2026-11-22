@@ -1,4 +1,4 @@
-from vector_store import vector_store
+from .vector_store import vector_store
 
 # Define a function that performs the retrieval given a user query
 

@@ -1,10 +1,10 @@
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
-from schemas import QueryRequest, TitleRequest, TitleResponse, ConversationRequest, ConversationUpdateRequest
+from .schemas import QueryRequest, TitleRequest, TitleResponse, ConversationRequest, ConversationUpdateRequest
 from langchain_core.messages import HumanMessage, AIMessage
-from graph import chatbot
-from generation import generate_chat_title
-from conversations import (
+from .graph import chatbot
+from .generation import generate_chat_title
+from .conversations import (
     get_conversations,
     create_conversation,
     get_single_conversation,
