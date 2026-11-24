@@ -1,143 +1,125 @@
-# import os
-# from pathlib import Path
+import os
+import tempfile
+from pathlib import Path
 
-# from dotenv import load_dotenv
-# from langchain_pymupdf4llm import PyMuPDF4LLMLoader
-# from langchain_text_splitters import (
-#     MarkdownHeaderTextSplitter,
-#     RecursiveCharacterTextSplitter
-# )
+from langchain_pymupdf4llm import PyMuPDF4LLMLoader
+from langchain_text_splitters import (
+    MarkdownHeaderTextSplitter,
+    RecursiveCharacterTextSplitter,
+)
 
-# from config import embedding_model
-# from vector_store import supabase
-
-
-# load_dotenv()
+from .config import embedding_model
+from .vector_store import supabase
 
 
-# # --------------------------------------------------
-# # Configuration
-# # --------------------------------------------------
+# --------------------------------------------------
+# Configuration
+# --------------------------------------------------
 
-# DOCUMENTS_DIR = Path("../documents")
+headers_to_split_on = [
+    ("#", "Main_Topic"),
+    ("##", "Sub_Section"),
+    ("###", "Nested_Topic"),
+]
 
+markdown_splitter = MarkdownHeaderTextSplitter(
+    headers_to_split_on=headers_to_split_on
+)
 
-# headers_to_split_on = [
-#     ("#", "Main_Topic"),
-#     ("##", "Sub_Section"),
-#     ("###", "Nested_Topic"),
-# ]
-
-# markdown_splitter = MarkdownHeaderTextSplitter(
-#     headers_to_split_on=headers_to_split_on
-# )
-
-# size_text_splitter = RecursiveCharacterTextSplitter(
-#     chunk_size=600,
-#     chunk_overlap=75
-# )
+size_text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=600,
+    chunk_overlap=75
+)
 
 
-# # --------------------------------------------------
-# # Process one PDF
-# # --------------------------------------------------
+# --------------------------------------------------
+# Ingest a single PDF (given its path on disk)
+# --------------------------------------------------
 
-# def ingest_document(file_path: Path):
+def ingest_document(file_path: Path, original_filename: str) -> dict:
+    """
+    Load, chunk, embed and store one PDF document.
 
-#     print(f"\nProcessing: {file_path.name}")
+    Returns a dict with document_id and chunk_count.
+    Raises an exception if anything goes wrong (caller should handle it).
+    """
 
-#     # 1. Load document
-#     loader = PyMuPDF4LLMLoader(
-#         file_path=str(file_path),
-#         mode="single"
-#     )
+    # 1. Load document → markdown
+    loader = PyMuPDF4LLMLoader(
+        file_path=str(file_path),
+        mode="single"
+    )
+    document = loader.load()
+    markdown_document = document[0].page_content
 
-#     document = loader.load()
+    # 2. Structural splitting (by headers)
+    structural_chunks = markdown_splitter.split_text(markdown_document)
 
-#     markdown_document = document[0].page_content
+    # 3. Size-based splitting
+    final_chunks = size_text_splitter.split_documents(structural_chunks)
 
-#     # 2. Structural splitting
-#     structural_chunks = markdown_splitter.split_text(
-#         markdown_document
-#     )
+    # 4. Create document record in Supabase
+    document_response = (
+        supabase
+        .table("documents")
+        .insert({"filename": original_filename})
+        .execute()
+    )
+    document_id = document_response.data[0]["id"]
 
-#     # 3. Size-based splitting
-#     final_chunks = size_text_splitter.split_documents(
-#         structural_chunks
-#     )
+    # 5. Generate embeddings for all chunks
+    texts = [chunk.page_content for chunk in final_chunks]
+    embeddings = embedding_model.embed_documents(texts)
 
-#     print(f"Created {len(final_chunks)} chunks.")
+    # 6. Build rows and bulk-insert into document_chunks
+    rows = [
+        {
+            "document_id": document_id,
+            "content": chunk.page_content,
+            "metadata": chunk.metadata,
+            "embedding": embedding,
+        }
+        for chunk, embedding in zip(final_chunks, embeddings)
+    ]
 
-#     # 4. Create document record
-#     document_response = (
-#         supabase
-#         .table("documents")
-#         .insert({
-#             "filename": file_path.name
-#         })
-#         .execute()
-#     )
+    supabase.table("document_chunks").insert(rows).execute()
 
-#     document_id = document_response.data[0]["id"]
-
-#     print(f"Created document record: {document_id}")
-
-#     # 5. Generate embeddings
-#     texts = [
-#         chunk.page_content
-#         for chunk in final_chunks
-#     ]
-
-#     embeddings = embedding_model.embed_documents(
-#         texts
-#     )
-
-#     # 6. Prepare chunk rows
-#     rows = []
-
-#     for chunk, embedding in zip(
-#         final_chunks,
-#         embeddings
-#     ):
-
-#         rows.append({
-#             "document_id": document_id,
-#             "content": chunk.page_content,
-#             "metadata": chunk.metadata,
-#             "embedding": embedding
-#         })
-
-#     # 7. Store chunks
-#     supabase \
-#         .table("document_chunks") \
-#         .insert(rows) \
-#         .execute()
-
-#     print(
-#         f"Inserted {len(rows)} chunks "
-#         f"for document {document_id}."
-#     )
-
-#     print(f"Finished: {file_path.name}")
+    return {"document_id": document_id, "chunk_count": len(rows)}
 
 
-# # --------------------------------------------------
-# # Process all PDFs
-# # --------------------------------------------------
+# --------------------------------------------------
+# Delete a document and all its chunks
+# --------------------------------------------------
 
-# def ingest_all_documents():
+def delete_document(document_id: int) -> bool:
+    """
+    Remove a document record and its chunks from Supabase.
+    Chunk deletion relies on the ON DELETE CASCADE constraint;
+    if that is not set up, chunks are deleted explicitly first.
+    """
+    # Delete chunks first (safe even with CASCADE)
+    supabase.table("document_chunks").delete().eq("document_id", document_id).execute()
 
-#     pdf_files = list(
-#         DOCUMENTS_DIR.glob("*.pdf")
-#     )
+    # Delete the document record
+    response = (
+        supabase.table("documents")
+        .delete()
+        .eq("id", document_id)
+        .execute()
+    )
 
-#     print(
-#         f"Found {len(pdf_files)} PDF(s)."
-#     )
-
-#     for file_path in pdf_files:
-#         ingest_document(file_path)
+    return len(response.data) > 0
 
 
-# if __name__ == "__main__":
-#     ingest_all_documents()
+# --------------------------------------------------
+# List all ingested documents
+# --------------------------------------------------
+
+def list_documents() -> list:
+    response = (
+        supabase.table("documents")
+        .select("id, filename, created_at")
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return response.data

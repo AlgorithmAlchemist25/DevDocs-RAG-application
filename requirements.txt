@@ -23,6 +23,7 @@ langchain-pymupdf4llm
 fastapi
 uvicorn[standard]
 python-dotenv
+python-multipart
 
 # Data validation / configuration
 pydantic
